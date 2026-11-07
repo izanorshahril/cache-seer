@@ -109,7 +109,7 @@ The compaction reads the warm cache, so it costs little, and the next message pa
 That holds whichever model you come back on: a compacted session can carry on on Opus even after its cache has gone cold.
 
 With a 1h cache it compacts at 55 minutes idle, and with a 5m cache at 4 minutes.
-Set `compactAfter` to `45m`, `30m`, `15m` or `5m` for an earlier one; a duration past the cache TTL is held to a minute before cold.
+Set `compactAfter` to `50m`, `45m`, `30m`, `15m`, `10m` or `5m` for an earlier one; a duration past the cache TTL is held to a minute before cold.
 
 It runs only when all of these hold:
 
@@ -194,7 +194,7 @@ Ending the hold ends that process. A closed lid, the power button or a manual sl
 | --- | --- | --- |
 | `autoCompact` | `on` | `off`, `on` |
 | `keepAwake` | `off` | `off`, `on` |
-| `compactAfter` | `auto` | `auto`, `55m`, `45m`, `30m`, `15m`, `5m` |
+| `compactAfter` | `auto` | `auto`, `55m`, `50m`, `45m`, `30m`, `15m`, `10m`, `5m` |
 | `guard` | `ask` | `ask`, `warn`, `off` |
 | `cacheTtl` | `1h` | `1h`, `5m` |
 | `minTokens` | `50000` | `20000`, `50000`, `100000`, `200000` |

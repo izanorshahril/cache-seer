@@ -24,7 +24,7 @@
       "type": "string",
       "title": "Idle compaction after",
       "description": "Idle time before it compacts: auto is 55m on a 1h cache (52m where Claude Code's own idle compaction is on too) and 4m on a 5m cache.",
-      "options": ["auto", "55m", "45m", "30m", "15m", "5m"],
+      "options": ["auto", "55m", "50m", "45m", "30m", "15m", "10m", "5m"],
       "default": "auto"
     },
     "guard": {

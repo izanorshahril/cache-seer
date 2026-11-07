@@ -66,6 +66,8 @@ async function ensureLoaded($: EngineInterface): Promise<void> {
   const stored = (await $.store.get(sessionKey(id))) as Partial<Core> | undefined
 
   await update($, core, () => ({ ...EMPTY, ...stored, byModel: { ...stored?.byModel } }))
+  // A turn that finished before a restart still counts, so the idle timer runs without a new message.
+  armedHere = stored?.armed === true
 }
 
 async function patch($: EngineInterface, change: (value: Core) => Core): Promise<void> {
