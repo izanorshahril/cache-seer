@@ -73,7 +73,8 @@ const MID = 13
 const BASE = 17.5
 
 function usageDots(part: RatePart, cells: number, x: number, index: number): string {
-  const lit = (part.left / 100) * cells
+  // The dots fill with the figure shown: up as usage grows, or down as it runs out.
+  const lit = (part.percent / 100) * cells
   const color = TONE[part.tone]
   let svg = ''
 
@@ -95,7 +96,7 @@ function usageDots(part: RatePart, cells: number, x: number, index: number): str
   return svg
 }
 
-/** USAGE, then each window's dots, percent left and reset time, coloured by how much is left. */
+/** USAGE, then each window's dots, percent used or left and reset time, coloured by how much is left. */
 export function usageSvg(parts: readonly RatePart[], cells: number, still = false): Drawing {
   let x = 0
   let body = runs([{ text: 'USAGE', size: 12.5, weight: 700, fill: TEXT, spacing: 0.6 }], x, BASE).svg
@@ -114,8 +115,8 @@ export function usageSvg(parts: readonly RatePart[], cells: number, still = fals
     const className = part.tone === 'critical' ? ' class="alert"' : ''
     const words = runs(
       [
-        { text: `${part.left}%`, size: 14, weight: 700, fill: color },
-        { text: 'left', size: 12.5, weight: 500, fill: color, opacity: 0.8, gap: 3.5 },
+        { text: `${part.percent}%`, size: 14, weight: 700, fill: color },
+        { text: part.word, size: 12.5, weight: 500, fill: color, opacity: 0.8, gap: 3.5 },
         ...(part.isLow ? [{ text: 'LOW', size: 11.5, weight: 700, fill: color, gap: 5, spacing: 0.5 }] : []),
         ...(part.reset ? [{ text: `· ${part.reset}`, size: 12.5, weight: 500, fill: color, opacity: 0.62, gap: 5 }] : []),
       ],

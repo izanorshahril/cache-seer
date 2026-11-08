@@ -812,8 +812,8 @@ export const register: Register = (on, rawOptions) => {
 
     const now = await $.clock.now()
     const value = await read($, core)
-    const rows = rateParts(await read($, rate), now).map(
-      part => `${part.name} ${part.left}%${part.isLow ? ' LOW' : ''}${part.reset ? ` (${part.reset})` : ''}`,
+    const rows = rateParts(await read($, rate), now, options.usageShows).map(
+      part => `${part.name} ${part.percent}%${part.isLow ? ' LOW' : ''}${part.reset ? ` (${part.reset})` : ''}`,
     )
     const selected = resolveModel(await $.session.model(), value)
     const cache = cacheText(value, now, options, selected) ?? 'Cache: no request yet.'
@@ -830,7 +830,7 @@ export const register: Register = (on, rawOptions) => {
       text: [
         cache,
         `Next message by model: ${table}.`,
-        ...(rows.length ? [`usage left: ${rows.join(', ')}`] : []),
+        ...(rows.length ? [`usage ${options.usageShows}: ${rows.join(', ')}`] : []),
         `idle compaction: ${autoCompact}; floor ${tok(options.minTokens)}; guard: ${options.guard}; keep awake: ${options.keepAwake ? (awake ? 'holding' : 'on') : 'off'}; motion: ${animate ? 'on' : 'off'}; cache TTL: ${span(options.ttlMs)}`,
         'Dollar figures are API list-price estimates, not subscription charges.',
       ].join('\n'),
@@ -871,7 +871,7 @@ export const register: Register = (on, rawOptions) => {
     const cache = cacheParts({ ...value, armed: armedHere }, now, options, selected)
     if (!cache && rows.length === 0) return next(e)
 
-    const parts = rateParts(rows, now)
+    const parts = rateParts(rows, now, options.usageShows)
     const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 100
     const ui = $.ui.resolve(e)
     const { Box, Text } = ui
@@ -890,7 +890,7 @@ export const register: Register = (on, rawOptions) => {
                     {part.name}{' '}
                   </Text>
                   <Text color={TONE[part.tone]} bold>
-                    {part.left}% left{part.isLow ? ' LOW' : ''}
+                    {part.percent}% {part.word}{part.isLow ? ' LOW' : ''}
                   </Text>
                   {part.reset ? <Text color={TONE[part.tone]}> · {part.reset}</Text> : null}
                 </Box>
@@ -918,7 +918,7 @@ export const register: Register = (on, rawOptions) => {
     const usage = parts.length > 0 ? usageSvg(parts, columns >= 70 ? 10 : 5, still) : null
     const figure = cache ? mascotSvg(cache.mode, still) : null
     const status = cache ? statusSvg(cache, still, { text: awakeText, isOn: options.keepAwake }) : null
-    const usageAlt = parts.map(part => `${part.name} ${part.left}% left`).join(', ')
+    const usageAlt = parts.map(part => `${part.name} ${part.percent}% ${part.word}`).join(', ')
 
     const band = (
       <Box key="band" flexDirection="row" flexWrap="wrap" alignItems="center" backgroundColor={BG} borderStyle="round" borderColor={BG} paddingX={1}>

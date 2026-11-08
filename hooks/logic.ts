@@ -25,6 +25,8 @@ export type Options = {
   /** Hold the machine awake while an idle compaction or keepwarm still waits on a warm cache. */
   keepAwake: boolean
   guard: 'ask' | 'warn' | 'off'
+  /** Usage reads as percent used, the way Claude shows it, or as percent left, the way Codex does. */
+  usageShows: UsageShows
   ttlMs: number
   minTokens: number
   /** Idle time before the one auto compact: shortly before the cache goes cold, or the compactAfter duration. */
@@ -49,6 +51,7 @@ export function parseOptions(raw: Readonly<Record<string, unknown>>): Options {
     autoCompact: raw.autoCompact !== 'off',
     keepAwake: raw.keepAwake === 'on',
     guard: raw.guard === 'warn' || raw.guard === 'off' ? raw.guard : 'ask',
+    usageShows: raw.usageShows === 'left' ? 'left' : 'used',
     ttlMs,
     // A compaction must start while the cache still serves it, so a longer setting is held a minute short of cold.
     compactAt: after === null ? compactAtMs(ttlMs) : Math.min(after, ttlMs - MINUTE),
@@ -256,9 +259,21 @@ export type Tone = 'ok' | 'watch' | 'high' | 'critical'
 /** How a usage window reads by what is left: blue, amber, orange, then red. */
 export const toneOf = (left: number): Tone => (left > 50 ? 'ok' : left > 25 ? 'watch' : left >= LOW_AT ? 'high' : 'critical')
 
-export type RatePart = { name: string; left: number; isLow: boolean; tone: Tone; reset: string }
+export type UsageShows = 'used' | 'left'
 
-export function rateParts(rows: readonly RateRow[], now: number): RatePart[] {
+/** `percent` and `word` are what the band prints; tone and LOW always follow what is left. */
+export type RatePart = {
+  name: string
+  left: number
+  used: number
+  percent: number
+  word: UsageShows
+  isLow: boolean
+  tone: Tone
+  reset: string
+}
+
+export function rateParts(rows: readonly RateRow[], now: number, shows: UsageShows = 'used'): RatePart[] {
   const rank = (kind: string) => {
     const at = RATE_ORDER.indexOf(kind)
 
@@ -268,12 +283,16 @@ export function rateParts(rows: readonly RateRow[], now: number): RatePart[] {
   return [...rows]
     .sort((a, b) => rank(a.kind) - rank(b.kind))
     .map(row => {
-      const left = Math.max(0, Math.round((100 - row.percentUsed) * 10) / 10)
+      const used = Math.min(100, Math.max(0, Math.round(row.percentUsed * 10) / 10))
+      const left = Math.round((100 - used) * 10) / 10
       const ms = row.resetsAt ? Date.parse(row.resetsAt) - now : Number.NaN
 
       return {
         name: RATE_NAMES[row.kind] ?? row.kind,
         left,
+        used,
+        percent: shows === 'left' ? left : used,
+        word: shows,
         isLow: left < LOW_AT,
         tone: toneOf(left),
         reset: Number.isNaN(ms) ? '' : ms <= 0 ? 'resetting' : span(ms),

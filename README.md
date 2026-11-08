@@ -8,7 +8,7 @@ The code and mascot art are written here; none is copied from either project.
 
 | Part | From | What it does |
 | --- | --- | --- |
-| Band above the prompt | ribbon | 7D and 5H usage left with reset times, then the mascot, cache state, next-message cost, idle compaction status and keep awake status. |
+| Band above the prompt | ribbon | 7D and 5H usage, used or left, with reset times, then the mascot, cache state, next-message cost, idle compaction status and keep awake status. |
 | Cold-send guard | cache-tax | On any model, before a message that would re-write a large cold cache, asks once in the question box with the cost: send, a cheaper model, summarize first, or cancel. |
 | `/keepwarm` | cache-tax | Billed pings keep the cache alive for a window you choose. Manual only here. |
 | Idle compaction | new | On by default. Compacts once when the session idles, while the cache is still warm, so the next message is small on any model. |
@@ -47,12 +47,16 @@ Until the old one is removed, the transcript says it is still on.
 
 The desktop app, VS Code and mobile draw it from SVG in [hooks/art.ts](hooks/art.ts); the terminal draws the same figures as coloured text.
 
-| Usage left | Colour |
-| --- | --- |
-| Above 50% | Blue |
-| 26-50% | Amber |
-| 15-25% | Orange |
-| Below 15% | Red, pulsing, with LOW |
+Each window reads as percent used by default, as Claude's `/usage` does.
+Set `usageShows` to `left` to read percent left, as Codex does.
+Either way, the colour follows what is left:
+
+| Used | Left | Colour |
+| --- | --- | --- |
+| Below 50% | Above 50% | Blue |
+| 50-74% | 26-50% | Amber |
+| 75-85% | 15-25% | Orange |
+| Above 85% | Below 15% | Red, pulsing, with LOW |
 
 | Cache | Chip | Mascot |
 | --- | --- | --- |
@@ -182,7 +186,7 @@ Ending the hold ends that process. A closed lid, the power button or a manual sl
 
 | Command | Effect |
 | --- | --- |
-| `/cache-seer` | Shows cache state, usage left and settings. |
+| `/cache-seer` | Shows cache state, usage and settings. |
 | `/cache-seer compact on\|off` | Sets idle compaction for this session. |
 | `/cache-seer awake on\|off` | Sets keep awake, for every session. |
 | `/cache-seer motion on\|off` | Sets the band's animation, for every session; off freezes every drawing on its first frame. |
@@ -195,6 +199,7 @@ Ending the hold ends that process. A closed lid, the power button or a manual sl
 | `autoCompact` | `on` | `off`, `on` |
 | `keepAwake` | `off` | `off`, `on` |
 | `compactAfter` | `auto` | `auto`, `55m`, `50m`, `45m`, `30m`, `15m`, `10m`, `5m` |
+| `usageShows` | `used` | `used`, `left` |
 | `guard` | `ask` | `ask`, `warn`, `off` |
 | `cacheTtl` | `1h` | `1h`, `5m` |
 | `minTokens` | `50000` | `20000`, `50000`, `100000`, `200000` |

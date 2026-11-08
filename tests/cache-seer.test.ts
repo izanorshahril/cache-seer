@@ -184,9 +184,20 @@ test('estimates price every model the mod lists', () => {
 test('usage reads blue, amber, orange, then red as it runs out', () => {
   expect([80, 51, 50, 26, 25, 15, 14.9].map(toneOf)).toEqual(['ok', 'ok', 'watch', 'watch', 'high', 'high', 'critical'])
   expect(rateParts([{ kind: 'five_hour', percentUsed: 90 }, { kind: 'seven_day', percentUsed: 55 }], 0)).toMatchObject([
-    { name: '5H', left: 10, tone: 'critical', isLow: true },
-    { name: '7D', left: 45, tone: 'watch', isLow: false },
+    { name: '5H', left: 10, used: 90, percent: 90, word: 'used', tone: 'critical', isLow: true },
+    { name: '7D', left: 45, used: 55, percent: 55, word: 'used', tone: 'watch', isLow: false },
   ])
+})
+
+test('usage reads as percent used by default and as percent left on request', () => {
+  const rows = [{ kind: 'five_hour', percentUsed: 90 }]
+
+  expect(parseOptions({}).usageShows).toBe('used')
+  expect(parseOptions({ usageShows: 'left' }).usageShows).toBe('left')
+  expect(parseOptions({ usageShows: 'odd' }).usageShows).toBe('used')
+  expect(rateParts(rows, 0, 'left')).toMatchObject([{ percent: 10, word: 'left', tone: 'critical', isLow: true }])
+  expect(usageSvg(rateParts(rows, 0), 10).source).toContain('90%')
+  expect(usageSvg(rateParts(rows, 0, 'left'), 10).source).toContain('10%')
 })
 
 test('the drawings carry their words and stay within the Svg limit', () => {
@@ -194,7 +205,7 @@ test('the drawings carry their words and stay within the Svg limit', () => {
   const usage = usageSvg(parts, 10)
   const cold = statusSvg({ mode: 'cold', time: '12h 45m', cost: '$4.78', plan: 'idle compact on', planState: 'on', lead: '', summary: '' })
 
-  expect(usage.source).toContain('45%')
+  expect(usage.source).toContain('55%')
   expect(cold.source).toContain('COLD')
   expect(cold.source).toContain(MODE_HUE.cold)
 
@@ -293,7 +304,7 @@ test('the band draws usage and cache state on every surface', { options: { autoC
 
   const terminal = await $.ui.mount({ ...(BAND as object), surface: 'terminal' } as never)
 
-  expect((await terminal.find({ type: 'Text', text: /LOW/ }))?.text).toContain('10% left')
+  expect((await terminal.find({ type: 'Text', text: /LOW/ }))?.text).toContain('90% used')
   expect((await terminal.find({ type: 'Text', text: /Cache warm/ }))?.text).toContain('1h 0m left')
   expect((await terminal.find({ type: 'Text', text: /compact/ }))?.text).toContain('◷ idle compact in 55m')
   expect((await terminal.find({ type: 'Text', text: /keep awake/ }))?.text).toBe(' · ○ keep awake off')
@@ -324,8 +335,21 @@ test('after a restart the band shows the last usage until a new reply reports it
 
   const ui = await $.ui.mount({ ...(BAND as object), surface: 'terminal' } as never)
 
+  expect((await ui.find({ type: 'Text', text: /LOW/ }))?.text).toContain('90% used')
+  expect((await ui.find({ type: 'Text', text: /40% used/ }))).toBeUndefined()
+  await ui.unmount()
+})
+
+test('usageShows left reads the band as percent left', { options: { usageShows: 'left' } }, async ($, on) => {
+  mock.clock(on, { now: 1000 })
+  mock.store(on, { rate: [{ kind: 'five_hour', percentUsed: 90, resetsAt: new Date(1000 + 2 * HOUR).toISOString() }] })
+  standIn(on, () => {})
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...(BAND as object), surface: 'terminal' } as never)
+
   expect((await ui.find({ type: 'Text', text: /LOW/ }))?.text).toContain('10% left')
-  expect((await ui.find({ type: 'Text', text: /60% left/ }))).toBeUndefined()
   await ui.unmount()
 })
 
@@ -344,7 +368,7 @@ test('a running session picks up the reading another session saved', async ($, o
 
   const ui = await $.ui.mount({ ...(BAND as object), surface: 'terminal' } as never)
 
-  expect((await ui.find({ type: 'Text', text: /LOW/ }))?.text).toContain('10% left')
+  expect((await ui.find({ type: 'Text', text: /LOW/ }))?.text).toContain('90% used')
   await ui.unmount()
 })
 

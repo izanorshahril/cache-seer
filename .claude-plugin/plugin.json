@@ -1,7 +1,7 @@
 {
   "name": "cache-seer",
   "version": "0.1.0",
-  "description": "Band with usage left, prompt-cache state and idle compaction status, a cold-send guard, optional keepwarm, and an idle compaction that runs before an idle session's cache goes cold.",
+  "description": "Band with usage, prompt-cache state and idle compaction status, a cold-send guard, optional keepwarm, and an idle compaction that runs before an idle session's cache goes cold.",
   "author": { "name": "izanorshahril" },
   "license": "MIT",
   "types": "./types/index.d.ts",
@@ -26,6 +26,13 @@
       "description": "Idle time before it compacts: auto is 55m on a 1h cache (52m where Claude Code's own idle compaction is on too) and 4m on a 5m cache.",
       "options": ["auto", "55m", "50m", "45m", "30m", "15m", "10m", "5m"],
       "default": "auto"
+    },
+    "usageShows": {
+      "type": "string",
+      "title": "Usage shows",
+      "description": "Show each usage window as percent used, the way Claude does, or as percent left, the way Codex does. Colours and LOW follow what is left either way.",
+      "options": ["used", "left"],
+      "default": "used"
     },
     "guard": {
       "type": "string",
