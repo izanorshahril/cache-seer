@@ -286,6 +286,32 @@ test('an idle session compacts once and only once', { options: { autoCompact: 'o
   expect(compactions).toBe(2)
 })
 
+
+test('a store that cannot be read or written still lets an idle session compact', { options: { autoCompact: 'on' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const broken = () => {
+    throw new SyntaxError('JSON Parse error: Unrecognized token')
+  }
+  on('store.get', broken)
+  on('store.set', broken)
+  on('store.keys', broken)
+  on('store.delete', broken)
+  const logs: string[] = []
+  let compactions = 0
+
+  standIn(on as never, () => {
+    compactions += 1
+  }, [], 'claude-opus-5-5', () => '', text => logs.push(text))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'hi', turnId: 't1' } as never)
+  await $.turn.complete(COMPLETE as never)
+  await clock.advance(56 * MINUTE)
+
+  expect(compactions).toBe(1)
+  expect(logs.filter(text => text.includes('saved state cannot be read'))).toHaveLength(1)
+})
+
 const BAND = {
   plugin: 'cache-seer',
   component: 'AbovePrompt',

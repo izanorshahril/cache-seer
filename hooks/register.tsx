@@ -52,6 +52,35 @@ const ATTENDED = new Set<string>(['composer', 'bridge', 'sdk'])
 const RATE_KEY = 'rate'
 const sessionKey = (id: string) => `session:${id}`
 
+// A store the host cannot read or write, such as a file a crash left zeroed, must not stop session
+// start before the idle timer runs: a failed read counts as empty, a failed write is dropped, and
+// the first failure is logged once.
+let storeWarned = false
+
+function storeFailed($: EngineInterface, error: unknown): void {
+  if (storeWarned) return
+
+  storeWarned = true
+  $.ui.log(`cache-seer: its saved state cannot be read or written (${String(error)}), so it runs from memory and a restart forgets the idle timer. Delete ~/.claude/plugins/store/cache-seer_*.json and restart to reset it.`)
+}
+
+async function storeGet($: EngineInterface, key: string): Promise<unknown> {
+  try {
+    return await $.store.get(key)
+  } catch (error) {
+    storeFailed($, error)
+    return undefined
+  }
+}
+
+async function storeSet($: EngineInterface, key: string, value: unknown): Promise<void> {
+  try {
+    await $.store.set(key, value)
+  } catch (error) {
+    storeFailed($, error)
+  }
+}
+
 // The session whose saved record is in `core`. A resume can raise its hooks before session start,
 // and a write then must build on the saved record, not on an empty one.
 let loadedFor = ''
@@ -63,7 +92,7 @@ async function ensureLoaded($: EngineInterface): Promise<void> {
 
   loadedFor = id
 
-  const stored = (await $.store.get(sessionKey(id))) as Partial<Core> | undefined
+  const stored = (await storeGet($, sessionKey(id))) as Partial<Core> | undefined
 
   await update($, core, () => ({ ...EMPTY, ...stored, byModel: { ...stored?.byModel } }))
   // A turn that finished before a restart still counts, so the idle timer runs without a new message.
@@ -77,17 +106,17 @@ async function patch($: EngineInterface, change: (value: Core) => Core): Promise
   const next = await read($, core)
   const now = await $.clock.now()
 
-  await $.store.set(sessionKey(await $.session.id()), { ...next, updatedAt: now })
+  await storeSet($, sessionKey(await $.session.id()), { ...next, updatedAt: now })
 }
 
 /** Drops sessions nobody can resume warm any more, so the store stays small. */
 async function pruneStore($: EngineInterface, now: number): Promise<void> {
-  for (const key of await $.store.keys()) {
+  for (const key of await $.store.keys().catch((error: unknown) => (storeFailed($, error), [] as string[]))) {
     if (!key.startsWith('session:')) continue
 
-    const value = (await $.store.get(key)) as Partial<Core> | undefined
+    const value = (await storeGet($, key)) as Partial<Core> | undefined
 
-    if (now - (value?.updatedAt ?? 0) > STALE_AFTER_MS) await $.store.delete(key)
+    if (now - (value?.updatedAt ?? 0) > STALE_AFTER_MS) await $.store.delete(key).catch((error: unknown) => storeFailed($, error))
   }
 }
 
@@ -112,7 +141,7 @@ let lastEffort: string | undefined
  */
 async function loadSavedRate($: EngineInterface): Promise<void> {
   const now = await $.clock.now()
-  const saved = ((await $.store.get(RATE_KEY)) ?? []) as RateRow[]
+  const saved = ((await storeGet($, RATE_KEY)) ?? []) as RateRow[]
   const rows = saved.filter(row => row.resetsAt !== undefined && Date.parse(row.resetsAt) > now)
 
   if (JSON.stringify(rows) !== JSON.stringify(await read($, rate))) await update($, rate, () => rows)
@@ -127,7 +156,7 @@ async function measure($: EngineInterface): Promise<void> {
     const rows = usage.rateLimits.map(({ kind, percentUsed, resetsAt }) => ({ kind, percentUsed, ...(resetsAt ? { resetsAt } : {}) }))
 
     await update($, rate, () => rows)
-    await $.store.set(RATE_KEY, rows)
+    await storeSet($, RATE_KEY, rows)
   } else {
     await loadSavedRate($)
   }
@@ -196,7 +225,7 @@ async function adoptOld($: EngineInterface, options: Options): Promise<void> {
   if (await $.store.get(MIGRATED_KEY).catch(() => true)) return
 
   // Marked first, so a failed copy is never retried at every start.
-  await $.store.set(MIGRATED_KEY, true)
+  await storeSet($, MIGRATED_KEY, true)
 
   const stores = await $.fs.list(`${dir}/plugins/store`).catch(() => [])
   const old = stores.find(entry => entry.kind === 'file' && entry.name.startsWith(`${OLD_NAME}_${OLD_NAME}-`) && entry.name.endsWith('.json'))
@@ -205,7 +234,7 @@ async function adoptOld($: EngineInterface, options: Options): Promise<void> {
   if (!saved || typeof saved !== 'object') return
 
   for (const [key, value] of Object.entries(saved)) {
-    if ((await $.store.get(key)) === undefined) await $.store.set(key, value)
+    if ((await storeGet($, key)) === undefined) await storeSet($, key, value)
   }
 }
 
@@ -309,7 +338,7 @@ async function loadPrefs($: EngineInterface, options: Options): Promise<void> {
 async function setPref($: EngineInterface, options: Options, change: Prefs): Promise<void> {
   const saved = ((await $.store.get(PREFS_KEY).catch(() => undefined)) ?? {}) as Prefs
 
-  await $.store.set(PREFS_KEY, { ...saved, ...change })
+  await storeSet($, PREFS_KEY, { ...saved, ...change })
   await loadPrefs($, options)
   await reconcileAwake($, options)
   $.ui.invalidate('ui.render')
