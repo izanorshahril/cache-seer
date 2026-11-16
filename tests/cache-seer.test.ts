@@ -788,3 +788,34 @@ test('cache-seer options of its own win over the old ones', async ($, on) => {
   await start($, seen.clock)
   expect((await run($, '')).text).toContain('guard: ask')
 })
+
+/** A /btw fork: a new session id with nothing stored, then a prompt on the parent's model. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function forkThenSend($: any, on: any, start: Record<string, unknown>) {
+  mock.clock(on, { now: 10 * HOUR })
+  mock.store(on)
+  const asked: string[] = []
+  standIn(on, () => {}, [], 'claude-opus-5-5')
+  on('classic.SessionStart', () => ({}) as never)
+  on('tool.call', (_: unknown, e: { questions: { question: string }[] }) => {
+    asked.push(e.questions[0]?.question ?? '')
+    return { result: { questions: [], answers: {} } }
+  })
+  on('prompt.submit', (_: unknown, e: { text: string }) => ({ text: e.text }))
+  await $.classic.SessionStart({ source: 'fork', context_tokens: 156_000, ...start } as never)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await send($, 'a side question')
+  return asked
+}
+
+test('a fork four minutes after the last reply is warm, named model or not', async ($, on) => {
+  expect(await forkThenSend($, on, { seconds_since_last_response: 240 })).toEqual([])
+})
+
+test('a fork with no age is warm when the engine says the cache has not expired', async ($, on) => {
+  expect(await forkThenSend($, on, { model: 'claude-opus-5-5', prompt_cache_likely_expired: false })).toEqual([])
+})
+
+test('a fork past the cache life still asks', async ($, on) => {
+  expect(await forkThenSend($, on, { model: 'claude-opus-5-5', seconds_since_last_response: 2 * 3600 })).toHaveLength(1)
+})

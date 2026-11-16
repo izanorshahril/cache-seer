@@ -667,23 +667,27 @@ export const register: Register = (on, rawOptions) => {
     } else if (e.source === 'compact') {
       await patch($, c => ({ ...c, compacted: true }))
     } else if (e.source === 'resume' || e.source === 'fork') {
-      const seconds = e.seconds_since_last_response
+      // Without the age, the engine's own verdict still says whether the cache is warm: a fork (`/btw`)
+      // starts a new session id with nothing stored, and must not read as cold.
+      const seconds = e.seconds_since_last_response ?? (e.prompt_cache_likely_expired === false ? 0 : undefined)
       const tokens = e.context_tokens
+      // A fork or resume may not name its model; the session's own is the one that replied last.
+      const resumedOn = e.model || (await $.session.model().catch(() => ''))
 
       await patch($, c => {
         if (seconds === undefined) return { ...c, tokens: c.tokens === 0 && tokens ? tokens : c.tokens }
 
         const lastResponse = now - seconds * 1000
-        // The last response was made by the model that last replied, which `e.model`, the model the
-        // session resumes on, need not be.
-        const replied = c.replyModel || e.model || ''
+        // The last response was made by the model that last replied, which the model the session
+        // resumes on need not be.
+        const replied = c.replyModel || resumedOn
         const key = replied ? familyKey(replied) : ''
 
         return {
           ...c,
           lastAt: Math.max(c.lastAt, lastResponse),
           tokens: c.tokens === 0 && tokens ? tokens : c.tokens,
-          model: c.model || e.model || '',
+          model: c.model || resumedOn,
           byModel: key ? { ...c.byModel, [key]: Math.max(c.byModel?.[key] ?? 0, lastResponse) } : c.byModel,
         }
       })
