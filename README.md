@@ -9,7 +9,7 @@ The code and mascot art are written here; none is copied from either project.
 | Part | From | What it does |
 | --- | --- | --- |
 | Band above the prompt | ribbon | 7D and 5H usage, used or left, with reset times, then the mascot, cache state, next-message cost, idle compaction status and keep awake status. |
-| Cold-send guard | cache-tax | On any model, before a message that would re-write a large cold cache, asks once in the question box with the cost: send, a cheaper model, summarize first, or cancel. |
+| Cold-send guard | cache-tax | On any model, before a message that would re-write a large cold cache, asks once in the question box with the cost: send, a cheaper model, summarize first, or don't send. |
 | `/keepwarm` | cache-tax | Billed pings keep the cache alive for a window you choose. Manual only here. |
 | Idle compaction | new | On by default. Compacts once when the session idles, while the cache is still warm, so the next message is small on any model. |
 | Keep awake | new | Off by default. Holds the machine out of idle sleep while an idle compaction still waits on a warm cache, then lets it sleep. `/cache-seer awake on` turns it on. |
@@ -92,10 +92,10 @@ It says how long the cache has been cold and what sending costs, then offers the
 
 | Last reply | Sending on | Options |
 | --- | --- | --- |
-| Fable, Opus or Sonnet | Fable, Opus or Sonnet | Send on this model, use a cheaper model, summarize first, cancel |
-| Fable, Opus or Sonnet | Haiku | Send on Haiku, summarize on Haiku first, cancel |
-| Haiku | Fable, Opus or Sonnet | Send on this model, summarize on Haiku first, cancel |
-| Haiku | Haiku | Send on Haiku, cancel |
+| Fable, Opus or Sonnet | Fable, Opus or Sonnet | Send on this model, use a cheaper model, summarize first, don't send |
+| Fable, Opus or Sonnet | Haiku | Send on Haiku, summarize on Haiku first, don't send |
+| Haiku | Fable, Opus or Sonnet | Send on this model, summarize on Haiku first, don't send |
+| Haiku | Haiku | Send on Haiku, don't send |
 
 A cheaper model asks which model, with each cost beside it, then which effort from `low` to `xhigh`; `max` is typed under Other.
 Summarizing first asks the same two questions, and the summary is written on the model picked; the message then goes out on the model it was typed for.
@@ -103,7 +103,8 @@ Summarizing first asks the same two questions, and the summary is written on the
 Each decision leaves one card in the transcript: "Not sent. Your message is back in the box.", "Switching to Haiku, then sending your message.", or "Summarizing with Haiku, then sending your message on Opus."
 The engine draws that card in its own red warning colour, so the mod cannot colour it.
 The text sent is what the box holds when the pick is made, so an edit made meanwhile is what goes.
-A message with attachments gets only send or cancel, since attachments do not survive a re-send.
+A message with attachments gets only send or don't send, since attachments do not survive a re-send.
+Dismissing the question (Skip, Esc or the close button) is the same as "Don't send": the message goes back in the box, and only a run with nobody to ask sends it with a logged estimate.
 The `guard` option sets this: `ask` (the default) asks, `warn` only logs the estimate, and `off` sends without asking.
 
 ## Idle compaction
@@ -148,7 +149,7 @@ It leaves these gaps, which cache-seer closes:
 | When the context shrinks | At 54 minutes, or on your return in `compact_on_return` | Before the cache goes cold, at 55 minutes |
 | Smallest context it acts on | 200k tokens, 100k at least with `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` | 50k by default, 20k at least with `minTokens` |
 | Cache TTL | 1h only | 1h or 5m |
-| When it skips | Its timer fired over a minute late, a newer request came in, the conversation changed, or rate limits are near | A turn, an agent or a draft is in the way; tried again after 2 minutes |
+| When it skips | Its timer fired over a minute late, a newer request came in, the conversation changed, or rate limits are near | A turn or an agent is in the way, tried again after 2 minutes; a draft in the box holds it until 3 minutes before cold (on a 5m cache it does not wait), then it compacts and leaves the draft |
 | Whether it ran | Recorded only in Claude Code's analytics | A line in the transcript, and the band |
 | A machine asleep through it | No compaction | No compaction, unless keep awake holds the machine up |
 
@@ -214,7 +215,7 @@ Set them in the config menu or under `pluginConfigs` in settings.
 - Dollar figures are API list-price estimates for the context alone, not subscription charges.
   Rates live in [hooks/logic.ts](hooks/logic.ts), checked 2026-11-05 against the `claude-api` skill of Claude Code 2.1.317.
 - Keepwarm does not start by itself, unlike cache-tax, because idle compaction covers the same idle time.
-- A draft left in the prompt box holds compaction back until the cache goes cold.
+- A draft left in the prompt box holds compaction back until 3 minutes before the cache goes cold, or not at all on a 5m cache; then it compacts and the draft stays in the box.
 - Idle timers do not run while Windows is in Modern Standby, since it suspends idle desktop apps, and Remote Control does not keep the machine awake; turn on keep awake for that.
   An idle period that sleeps through the compaction time gets no compaction: on waking past the cache life the cache is cold, and compacting then would pay the full re-write.
 - Only the main conversation is compacted; a subagent's transcript never is.

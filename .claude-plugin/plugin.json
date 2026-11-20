@@ -1,6 +1,6 @@
 {
   "name": "cache-seer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Band with usage, prompt-cache state and idle compaction status, a cold-send guard, optional keepwarm, and an idle compaction that runs before an idle session's cache goes cold.",
   "author": { "name": "izanorshahril" },
   "license": "MIT",

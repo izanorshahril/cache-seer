@@ -123,6 +123,8 @@ async function pruneStore($: EngineInterface, now: number): Promise<void> {
 // Lost on a reload, and safe to lose: the worst case is one more tick's wait.
 let isTurnRunning = false
 let isBusy = false
+// Said once per idle: the compaction waits on a draft.
+let draftNoted = false
 let isCompacting = false
 let nextPingAt = 0
 let nextCompactAt = 0
@@ -439,10 +441,25 @@ async function tick($: EngineInterface, options: Options): Promise<void> {
       return
     }
 
-    // Someone is typing: leave the context as it is.
-    if ((await $.prompt.read()).text.trim() !== '') return
+    // A draft in the box holds the compaction back while someone may be about to send, but only until
+    // the last stretch before the cache goes cold: a draft left there must not cost the whole cache.
+    // The compaction leaves the draft in the box.
+    const idle = now - value.lastAt
+    const lastChance = options.ttlMs - Math.min(3 * MINUTE, options.ttlMs - options.compactAt)
+    const hasDraft = await $.prompt.read().then(
+      box => box.text.trim() !== '',
+      () => false,
+    )
 
-    await runCompact($, now - value.lastAt, now)
+    if (hasDraft && idle < lastChance) {
+      if (!draftNoted) {
+        draftNoted = true
+        $.ui.log(`cache-seer: idle compaction waits while a draft is in the box, until ${span(options.ttlMs - lastChance)} before the cache goes cold.`)
+      }
+      return
+    }
+
+    await runCompact($, idle, now)
   } finally {
     isBusy = false
   }
@@ -468,11 +485,14 @@ type Plan =
 /** What the question is about: the model the message goes on, and its cache's state. */
 type Held = { kind: ColdCase; selected: string; coldFor: string }
 
+/** The choice that sends nothing and puts the text back in the box. */
+const KEEP = "Don't send"
+
 /** The option labels: short, with the cost kept to the question and the model list. */
 function choiceLabel(choice: ColdChoice, held: Held): string {
   if (choice === 'send') return `Send on ${shortName(held.selected)}`
   if (choice === 'switch') return 'Use a cheaper model'
-  if (choice === 'cancel') return 'Cancel'
+  if (choice === 'cancel') return KEEP
 
   const [only] = compactModels(held.kind, held.selected)
 
@@ -706,6 +726,7 @@ export const register: Register = (on, rawOptions) => {
     if (!e.agentId && !isCompacting) {
       isTurnRunning = true
       // A real turn adds context, so a later idle may compact again.
+      draftNoted = false
       await patch($, c => ({ ...c, compacted: false, compactTried: false }))
     }
 
@@ -792,15 +813,23 @@ export const register: Register = (on, rawOptions) => {
       plan = e.attachments?.length
         ? (await $.ui.ask(`${label} ${coldFor}. Sending rebuilds this conversation${cost ? `, about ${cost}` : ''}.`, {
             header: 'Cold cache',
-            options: [`Send on ${label}`, 'Cancel'],
-          })) === 'Cancel'
-          ? null
-          : { road: 'send' }
+            options: [`Send on ${label}`, KEEP],
+          })) === `Send on ${label}`
+          ? { road: 'send' }
+          : null
         : await askCold($, held, value, now, options)
     } catch {
-      // A question that could not be shown must never eat a prompt.
-      $.ui.log(notice)
-      return next(e)
+      // Nobody to ask (a -p run, which is not interactive and draws nowhere): send, with the notice.
+      // Otherwise the question was dismissed, and a dismissed question keeps the message as
+      // "Don't send" does: it never sends unasked. Attachments do not go back in the box.
+      const surfaces = await $.session.surfaces().catch(() => [] as readonly string[])
+
+      if (viaCommand && surfaces.length === 0) {
+        $.ui.log(notice)
+        return next(e)
+      }
+
+      return restore($, e.text, e.attachments?.length ? 'Not sent; add the attachments again.' : 'Not sent.')
     }
 
     if (!plan) return restore($, e.text, 'Not sent.')

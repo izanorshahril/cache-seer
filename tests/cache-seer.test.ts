@@ -402,7 +402,7 @@ test('a running session picks up the reading another session saved', async ($, o
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: string[] = []) {
   const clock = mock.clock(on, { now: 1000 })
-  const seen = { filled: '', runs: [] as string[], sent: [] as string[], compactions: 0, asked: [] as string[], options: [] as string[][], logs: [] as string[], model, clock }
+  const seen = { filled: '', runs: [] as string[], sent: [] as string[], compactions: 0, asked: [] as string[], options: [] as string[][], logs: [] as string[], model, clock, dismiss: false, surfaces: ['desktop'] }
 
   mock.store(on)
   standIn(
@@ -415,13 +415,15 @@ async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: 
     () => seen.filled,
     text => seen.logs.push(text),
   )
+  on('session.surfaces', () => ({ value: seen.surfaces }))
   on('tool.call', (_: unknown, e: { questions: { question: string; options?: unknown[] }[] }) => {
+    if (seen.dismiss) throw new Error('dismissed')
     const first = e.questions[0]
     const question = first?.question ?? ''
 
     seen.asked.push(question)
     seen.options.push((first?.options ?? []).map(option => (typeof option === 'string' ? option : (option as { label: string }).label)))
-    return { result: { questions: [], answers: { [question]: answers.shift() ?? 'Cancel' } } }
+    return { result: { questions: [], answers: { [question]: answers.shift() ?? "Don't send" } } }
   })
   on('prompt.fill', (_: unknown, e: { text: string }) => {
     seen.filled = e.text
@@ -448,12 +450,12 @@ async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const send = ($: any, text: string, kind = 'composer') => $.prompt.submit({ text, origin: { kind }, wait: false }) as Promise<{ drop?: string; text?: string }>
 test('a cold send asks once in the question box, and Cancel puts the text back', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Cancel'])
+  const seen = await coldSession($, on, 'claude-opus-5-5', ["Don't send"])
   const result = await send($, 'back again')
 
   expect(seen.asked).toHaveLength(1)
   expect(seen.asked[0]).toMatch(/^Opus went cold .* Sending rebuilds this conversation, about \$1\.44\.$/)
-  expect(seen.options).toEqual([['Send on Opus', 'Use a cheaper model', 'Summarize first', 'Cancel']])
+  expect(seen.options).toEqual([['Send on Opus', 'Use a cheaper model', 'Summarize first', "Don't send"]])
   expect(result.drop).toBe('Not sent. Your message is back in the box.')
   expect(seen.filled).toBe('back again')
   expect(seen.sent).toEqual([])
@@ -491,7 +493,7 @@ test('from a large model to Haiku, summarize first runs on Haiku with no more pi
   await send($, 'go on')
   for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
 
-  expect(seen.options[0]).toEqual(['Send on Haiku', 'Summarize on Haiku first', 'Cancel'])
+  expect(seen.options[0]).toEqual(['Send on Haiku', 'Summarize on Haiku first', "Don't send"])
   expect(seen.compactions).toBe(1)
   // Already on Haiku: no switch either way.
   expect(seen.runs).toEqual([])
@@ -516,7 +518,7 @@ test('from Haiku to Haiku the question offers only sending and cancel', { option
   await send($, 'go on')
   for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
 
-  expect(seen.options).toEqual([['Send on Haiku', 'Cancel']])
+  expect(seen.options).toEqual([['Send on Haiku', "Don't send"]])
   expect(seen.sent).toEqual(['go on'])
 })
 
@@ -818,4 +820,37 @@ test('a fork with no age is warm when the engine says the cache has not expired'
 
 test('a fork past the cache life still asks', async ($, on) => {
   expect(await forkThenSend($, on, { model: 'claude-opus-5-5', seconds_since_last_response: 2 * 3600 })).toHaveLength(1)
+})
+
+test('a dismissed cold question keeps the message in the box, even where the app reports no surface', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5')
+  seen.dismiss = true
+  seen.surfaces = []
+
+  expect((await send($, 'back again')).drop).toBe('Not sent. Your message is back in the box.')
+  expect(seen.filled).toBe('back again')
+
+  const withImage = (await $.prompt.submit({ text: 'see this', origin: { kind: 'composer' }, attachments: [{ type: 'image' }], wait: false } as never)) as { drop?: string }
+
+  expect(withImage.drop).toBe('Not sent; add the attachments again. Your message is back in the box.')
+  expect(seen.sent).toEqual([])
+})
+
+test('a draft holds idle compaction back only until shortly before the cache goes cold', { options: { autoCompact: 'on', compactAfter: '50m' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  mock.store(on)
+  const logs: string[] = []
+  let compactions = 0
+
+  standIn(on as never, () => { compactions += 1 }, [], 'claude-opus-5-5', () => 'half a thought', text => logs.push(text))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: 'hi', turnId: 't1' } as never)
+  await $.turn.complete(COMPLETE as never)
+
+  await clock.advance(56 * MINUTE)
+  expect(compactions).toBe(0)
+  expect(logs.filter(text => text.includes('waits while a draft'))).toHaveLength(1)
+
+  await clock.advance(2 * MINUTE)
+  expect(compactions).toBe(1)
 })
