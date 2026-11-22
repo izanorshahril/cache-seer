@@ -134,8 +134,6 @@ let cancelTick: (() => void) | null = null
 let viaCommand = false
 // A turn has finished in this process. In memory, so a host that re-runs session start cannot clear it.
 let armedHere = false
-// The effort the last main-thread request went out at, so a compaction on another effort can put it back.
-let lastEffort: string | undefined
 
 /**
  * Usage is the account's, not the session's, so every session shows the newest
@@ -508,6 +506,24 @@ async function setEffort($: EngineInterface, effort: string): Promise<void> {
   }
 }
 
+/**
+ * The effort a summary on another effort puts back for `model`: the one saved with the last
+ * main-thread request, when that was on `model`, else what the settings give it
+ * (`modelSettings.<model>.effortLevel`, then `effortLevel`). Undefined when none says.
+ */
+async function effortFor($: EngineInterface, model: string): Promise<string | undefined> {
+  const saved = await read($, core)
+
+  if (saved.replyEffort && familyKey(saved.replyModel || model) === familyKey(model)) return saved.replyEffort
+
+  const settings = ((await $.settings.read().catch(() => undefined)) ?? {}) as Record<string, unknown>
+  const perModel = (settings.modelSettings ?? {}) as Record<string, { effortLevel?: unknown } | undefined>
+  const key = Object.keys(perModel).find(name => name === model) ?? Object.keys(perModel).find(name => familyKey(name) === familyKey(model))
+  const level = (key ? perModel[key]?.effortLevel : undefined) ?? settings.effortLevel
+
+  return typeof level === 'string' && isEffort(level) ? level : undefined
+}
+
 /** One compaction now: the direct call, or a /compact turn where the engine refuses it. */
 async function compactNow($: EngineInterface): Promise<{ skip?: string; tokensAfter?: number }> {
   if (!viaCommand) {
@@ -548,7 +564,7 @@ async function perform($: EngineInterface, plan: Plan, held: string): Promise<vo
 
   if (plan.road === 'compact') {
     const moves = familyKey(plan.model) !== familyKey(plan.back)
-    const effortBefore = lastEffort
+    const effortBefore = plan.effort ? await effortFor($, plan.back) : undefined
     const before = (await read($, core)).tokens
 
     isCompacting = true
@@ -572,6 +588,7 @@ async function perform($: EngineInterface, plan: Plan, held: string): Promise<vo
       // The message goes out on the model and effort it was typed for.
       if (moves) await $.command.run({ command: 'model', args: plan.back }).catch(error => $.ui.log(`cache-seer: could not switch back to ${shortName(plan.back)}: ${String(error)}`))
       if (plan.effort && effortBefore && effortBefore !== plan.effort) await setEffort($, effortBefore)
+      if (plan.effort && !effortBefore) $.ui.log(`cache-seer: the effort before the summary is unknown, so ${shortName(plan.back)} stays at ${plan.effort}; /effort sets another.`)
     }
   }
 
@@ -738,8 +755,9 @@ export const register: Register = (on, rawOptions) => {
       // The cache TTL runs from the start of the request.
       const now = await $.clock.now()
 
-      if (typeof e.effort === 'string') lastEffort = e.effort
-      await patch($, c => ({ ...c, lastAt: now, replyModel: e.model, byModel: { ...c.byModel, [familyKey(e.model)]: now } }))
+      const effort = typeof e.effort === 'string' ? e.effort : undefined
+
+      await patch($, c => ({ ...c, lastAt: now, replyModel: e.model, replyEffort: effort ?? c.replyEffort, byModel: { ...c.byModel, [familyKey(e.model)]: now } }))
     }
 
     return yield* next(e)

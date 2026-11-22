@@ -99,6 +99,8 @@ It says how long the cache has been cold and what sending costs, then offers the
 
 A cheaper model asks which model, with each cost beside it, then which effort from `low` to `xhigh`; `max` is typed under Other.
 Summarizing first asks the same two questions, and the summary is written on the model picked; the message then goes out on the model it was typed for.
+It also goes out at that model's effort: the one the last request on it went out at, kept across restarts, else `modelSettings.<model>.effortLevel` or `effortLevel` from your settings.
+Where none of those says, the effort picked for the summary stays, and the log says so.
 
 Each decision leaves one card in the transcript: "Not sent. Your message is back in the box.", "Switching to Haiku, then sending your message.", or "Summarizing with Haiku, then sending your message on Opus."
 The engine draws that card in its own red warning colour, so the mod cannot colour it.

@@ -9,6 +9,8 @@ export type Core = {
   model: string
   /** The model that made the last main-thread request: what a resumed session's idle time belongs to. */
   replyModel: string
+  /** The effort of that request, so a summary on another effort can put it back after a restart. */
+  replyEffort?: string
   /** Compacted, by anyone, with no real turn since: nothing more to compact. */
   compacted: boolean
   /** Auto compact already tried this idle period, whatever came of it. */

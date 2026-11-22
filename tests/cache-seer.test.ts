@@ -400,9 +400,9 @@ test('a running session picks up the reading another session saved', async ($, o
 
 /** A session whose cache on `model` went cold two hours ago, with stand-ins that record what the guard does. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: string[] = []) {
+async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: string[] = [], effort?: string) {
   const clock = mock.clock(on, { now: 1000 })
-  const seen = { filled: '', runs: [] as string[], sent: [] as string[], compactions: 0, asked: [] as string[], options: [] as string[][], logs: [] as string[], model, clock, dismiss: false, surfaces: ['desktop'] }
+  const seen = { filled: '', runs: [] as string[], sent: [] as string[], compactions: 0, asked: [] as string[], options: [] as string[][], logs: [] as string[], model, clock, dismiss: false, surfaces: ['desktop'], settings: {} as Record<string, unknown> }
 
   mock.store(on)
   standIn(
@@ -416,6 +416,11 @@ async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: 
     text => seen.logs.push(text),
   )
   on('session.surfaces', () => ({ value: seen.surfaces }))
+  on('settings.read', () => ({ value: seen.settings }))
+  // eslint-disable-next-line require-yield
+  on('turn.step', async function* (_: unknown, e: { turnId: string; index: number }) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [] }
+  })
   on('tool.call', (_: unknown, e: { questions: { question: string; options?: unknown[] }[] }) => {
     if (seen.dismiss) throw new Error('dismissed')
     const first = e.questions[0]
@@ -441,6 +446,11 @@ async function coldSession($: any, on: any, model = 'claude-opus-5-5', answers: 
 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.turn.start({ text: 'hi', turnId: 't1' })
+  if (effort) {
+    const step = $.turn.step({ turnId: 't1', index: 0, model, effort, messageCount: 1 })
+
+    for await (const _ of step);
+  }
   await $.turn.complete({ ...COMPLETE, usage: { ...COMPLETE.usage, model } })
   await clock.advance(2 * HOUR)
 
@@ -484,6 +494,37 @@ test('summarizing first asks which model and effort, then sends on the model typ
   expect(seen.runs).toEqual(['model claude-haiku-5-5', 'effort low', 'model claude-opus-5-5'])
   expect(seen.model).toBe('claude-opus-5-5')
   expect(seen.sent).toEqual(['go on'])
+})
+
+test('a summary on Haiku at xhigh puts Opus back on the effort its settings give it', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'])
+
+  seen.settings = { effortLevel: 'medium', modelSettings: { 'claude-haiku-5-5': { effortLevel: 'xhigh' } } }
+  await send($, 'go on')
+  for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
+
+  expect(seen.runs).toEqual(['model claude-haiku-5-5', 'effort xhigh', 'model claude-opus-5-5', 'effort medium'])
+  expect(seen.sent).toEqual(['go on'])
+})
+
+test('a summary puts back the effort the last request went out at, over the settings', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'], 'high')
+
+  seen.settings = { effortLevel: 'medium' }
+  await send($, 'go on')
+  for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
+
+  expect(seen.runs).toEqual(['model claude-haiku-5-5', 'effort xhigh', 'model claude-opus-5-5', 'effort high'])
+})
+
+test('a summary with no known effort before it says the effort stays', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'])
+
+  await send($, 'go on')
+  for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
+
+  expect(seen.runs).toEqual(['model claude-haiku-5-5', 'effort xhigh', 'model claude-opus-5-5'])
+  expect(seen.logs.some(line => line.includes('Opus stays at xhigh'))).toBe(true)
 })
 
 test('from a large model to Haiku, summarize first runs on Haiku with no more picks', { options: { autoCompact: 'off' } }, async ($, on) => {
