@@ -9,7 +9,7 @@ The code and mascot art are written here; none is copied from either project.
 | Part | From | What it does |
 | --- | --- | --- |
 | Band above the prompt | ribbon | 7D and 5H usage, used or left, with reset times, then the mascot, cache state, next-message cost, idle compaction status and keep awake status. |
-| Cold-send guard | cache-tax | On any model, before a message that would re-write a large cold cache, asks once in the question box with the cost: send, a cheaper model, summarize first, or don't send. |
+| Cold-send guard | cache-tax | On any model, before a message that would re-write a large cold cache, asks once in the question box with the cost: send, a cheaper model, compact first, or don't send. |
 | `/keepwarm` | cache-tax | Billed pings keep the cache alive for a window you choose. Manual only here. |
 | Idle compaction | new | On by default. Compacts once when the session idles, while the cache is still warm, so the next message is small on any model. |
 | Keep awake | new | Off by default. Holds the machine out of idle sleep while an idle compaction still waits on a warm cache, then lets it sleep. `/cache-seer awake on` turns it on. |
@@ -92,17 +92,17 @@ It says how long the cache has been cold and what sending costs, then offers the
 
 | Last reply | Sending on | Options |
 | --- | --- | --- |
-| Fable, Opus or Sonnet | Fable, Opus or Sonnet | Send on this model, use a cheaper model, summarize first, don't send |
-| Fable, Opus or Sonnet | Haiku | Send on Haiku, summarize on Haiku first, don't send |
-| Haiku | Fable, Opus or Sonnet | Send on this model, summarize on Haiku first, don't send |
+| Fable, Opus or Sonnet | Fable, Opus or Sonnet | Send on this model, use a cheaper model, compact first, don't send |
+| Fable, Opus or Sonnet | Haiku | Send on Haiku, compact on Haiku first, don't send |
+| Haiku | Fable, Opus or Sonnet | Send on this model, compact on Haiku first, don't send |
 | Haiku | Haiku | Send on Haiku, don't send |
 
 A cheaper model asks which model, with each cost beside it, then which effort from `low` to `xhigh`; `max` is typed under Other.
-Summarizing first asks the same two questions, and the summary is written on the model picked; the message then goes out on the model it was typed for.
+Compacting first asks the same two questions, and the summary is written on the model picked; the message then goes out on the model it was typed for.
 It also goes out at that model's effort: the one the last request on it went out at, kept across restarts, else `modelSettings.<model>.effortLevel` or `effortLevel` from your settings.
 Where none of those says, the effort picked for the summary stays, and the log says so.
 
-Each decision leaves one card in the transcript: "Not sent. Your message is back in the box.", "Switching to Haiku, then sending your message.", or "Summarizing with Haiku, then sending your message on Opus."
+Each decision leaves one card in the transcript: "Not sent. Your message is back in the box.", "Switching to Haiku, then sending your message.", or "Compacting with Haiku, then sending your message on Opus."
 The engine draws that card in its own red warning colour, so the mod cannot colour it.
 The text sent is what the box holds when the pick is made, so an edit made meanwhile is what goes.
 A message with attachments gets only send or don't send, since attachments do not survive a re-send.

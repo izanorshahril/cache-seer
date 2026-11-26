@@ -474,7 +474,7 @@ async function restore($: EngineInterface, text: string, why: string) {
   return { drop: isRestored ? `${why} Your message is back in the box.` : `${why} Your message: ${text.slice(0, 3500)}` }
 }
 
-/** What the question came to: send as is, or first switch or summarize on a model, then send. */
+/** What the question came to: send as is, or first switch or compact on a model, then send. */
 type Plan =
   | { road: 'send' }
   | { road: 'switch'; model: string; effort: Effort }
@@ -494,7 +494,7 @@ function choiceLabel(choice: ColdChoice, held: Held): string {
 
   const [only] = compactModels(held.kind, held.selected)
 
-  return picksCompactModel(held.kind) || !only ? 'Summarize first' : `Summarize on ${shortName(only)} first`
+  return picksCompactModel(held.kind) || !only ? 'Compact first' : `Compact on ${shortName(only)} first`
 }
 
 /** Sets the effort with `/effort`; a failure is logged and the send goes on at the effort in force. */
@@ -634,7 +634,7 @@ async function askCold($: EngineInterface, held: Held, value: Core, now: number,
 
     return `${shortName(model)}${modelCost ? ` (${usd(modelCost.usd)})` : ''}`
   })
-  const pickedModel = models[modelLabels.indexOf(await $.ui.ask(choice === 'switch' ? 'Send on which model?' : 'Summarize on which model?', { header: 'Model', options: modelLabels }))]
+  const pickedModel = models[modelLabels.indexOf(await $.ui.ask(choice === 'switch' ? 'Send on which model?' : 'Compact on which model?', { header: 'Model', options: modelLabels }))]
 
   if (!pickedModel) return null
 
@@ -865,7 +865,7 @@ export const register: Register = (on, rawOptions) => {
       drop:
         plan.road === 'switch'
           ? `Switching to ${shortName(plan.model)}, then sending your message.`
-          : `Summarizing with ${shortName(plan.model)}, then sending your message${plan.back && familyKey(plan.back) !== familyKey(plan.model) ? ` on ${shortName(plan.back)}` : ''}.`,
+          : `Compacting with ${shortName(plan.model)}, then sending your message${plan.back && familyKey(plan.back) !== familyKey(plan.model) ? ` on ${shortName(plan.back)}` : ''}.`,
     }
   })
 

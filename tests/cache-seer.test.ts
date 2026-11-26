@@ -465,7 +465,7 @@ test('a cold send asks once in the question box, and Cancel puts the text back',
 
   expect(seen.asked).toHaveLength(1)
   expect(seen.asked[0]).toMatch(/^Opus went cold .* Sending rebuilds this conversation, about \$1\.44\.$/)
-  expect(seen.options).toEqual([['Send on Opus', 'Use a cheaper model', 'Summarize first', "Don't send"]])
+  expect(seen.options).toEqual([['Send on Opus', 'Use a cheaper model', 'Compact first', "Don't send"]])
   expect(result.drop).toBe('Not sent. Your message is back in the box.')
   expect(seen.filled).toBe('back again')
   expect(seen.sent).toEqual([])
@@ -483,11 +483,11 @@ test('a switch to a lower model asks which model and effort, then sends on it', 
   expect(seen.sent).toEqual(['go on'])
 })
 
-test('summarizing first asks which model and effort, then sends on the model typed for', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'low'])
+test('compacting first asks which model and effort, then sends on the model typed for', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Compact first', 'Haiku ($0.18)', 'low'])
   const result = await send($, 'go on')
 
-  expect(result.drop).toBe('Summarizing with Haiku, then sending your message on Opus.')
+  expect(result.drop).toBe('Compacting with Haiku, then sending your message on Opus.')
   for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
 
   expect(seen.compactions).toBe(1)
@@ -497,7 +497,7 @@ test('summarizing first asks which model and effort, then sends on the model typ
 })
 
 test('a summary on Haiku at xhigh puts Opus back on the effort its settings give it', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'])
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Compact first', 'Haiku ($0.18)', 'xhigh'])
 
   seen.settings = { effortLevel: 'medium', modelSettings: { 'claude-haiku-5-5': { effortLevel: 'xhigh' } } }
   await send($, 'go on')
@@ -508,7 +508,7 @@ test('a summary on Haiku at xhigh puts Opus back on the effort its settings give
 })
 
 test('a summary puts back the effort the last request went out at, over the settings', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'], 'high')
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Compact first', 'Haiku ($0.18)', 'xhigh'], 'high')
 
   seen.settings = { effortLevel: 'medium' }
   await send($, 'go on')
@@ -518,7 +518,7 @@ test('a summary puts back the effort the last request went out at, over the sett
 })
 
 test('a summary with no known effort before it says the effort stays', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize first', 'Haiku ($0.18)', 'xhigh'])
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Compact first', 'Haiku ($0.18)', 'xhigh'])
 
   await send($, 'go on')
   for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
@@ -527,22 +527,22 @@ test('a summary with no known effort before it says the effort stays', { options
   expect(seen.logs.some(line => line.includes('Opus stays at xhigh'))).toBe(true)
 })
 
-test('from a large model to Haiku, summarize first runs on Haiku with no more picks', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-opus-5-5', ['Summarize on Haiku first'])
+test('from a large model to Haiku, compact first runs on Haiku with no more picks', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-opus-5-5', ['Compact on Haiku first'])
 
   seen.model = 'claude-haiku-5-5'
   await send($, 'go on')
   for (let i = 0; i < 5 && seen.sent.length < 1; i += 1) await seen.clock.advance(1)
 
-  expect(seen.options[0]).toEqual(['Send on Haiku', 'Summarize on Haiku first', "Don't send"])
+  expect(seen.options[0]).toEqual(['Send on Haiku', 'Compact on Haiku first', "Don't send"])
   expect(seen.compactions).toBe(1)
   // Already on Haiku: no switch either way.
   expect(seen.runs).toEqual([])
   expect(seen.sent).toEqual(['go on'])
 })
 
-test('from Haiku to a larger model, summarize first runs on Haiku and sends on the larger one', { options: { autoCompact: 'off' } }, async ($, on) => {
-  const seen = await coldSession($, on, 'claude-haiku-5-5', ['Summarize on Haiku first'])
+test('from Haiku to a larger model, compact first runs on Haiku and sends on the larger one', { options: { autoCompact: 'off' } }, async ($, on) => {
+  const seen = await coldSession($, on, 'claude-haiku-5-5', ['Compact on Haiku first'])
 
   seen.model = 'claude-opus-5-5'
   await send($, 'go on')
